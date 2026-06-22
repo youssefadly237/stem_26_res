@@ -196,24 +196,15 @@ def main():
     tab1, tab2 = st.tabs(["Search", "Rankings"])
 
     with tab1:
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1], vertical_alignment="bottom")
+        c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="center")
         with c1:
             query = st.text_input(
-                "Search by name (Arabic/English) or seat number",
-                label_visibility="collapsed",
+                "Search by name (Arabic/English) or seat number"
             ).strip()
         with c2:
-            per_page = st.selectbox(
-                "Per page",
-                [5, 10, 20, 50],
-                index=1,
-                key="s_size",
-                label_visibility="collapsed",
-            )
+            per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="s_size")
         with c3:
-            page_num = st.number_input(
-                "Page", min_value=1, value=1, key="s_page", label_visibility="collapsed"
-            )
+            page_num = st.number_input("Page", min_value=1, value=1, key="s_page")
 
         if query:
             mask = (
@@ -222,44 +213,40 @@ def main():
                 | df["seat_number"].eq(query)
             )
             results = df[mask]
+            page_data, total_pages = paginate(results, per_page, page_num)
+            of_text = f"of {total_pages}" if total_pages > 1 else ""
             with c4:
-                st.markdown(f"**{len(results)}** result(s)")
+                st.html(
+                    f"<div style='padding-top:24px;text-align:center'>{of_text}</div>"
+                )
+            with c5:
+                st.html(
+                    f"<div style='padding-top:24px'><strong>{len(results)}</strong> result(s)</div>"
+                )
             if results.empty:
                 st.info("No results found.")
             else:
-                page_data, _ = paginate(results, per_page, page_num)
                 for _, row in page_data.iterrows():
                     render_student_card(row, subjects_for_branch(row["branch"]))
-        else:
-            with c4:
-                st.markdown("")
 
     with tab2:
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1], vertical_alignment="bottom")
+        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1], vertical_alignment="center")
         with c1:
-            branch = st.selectbox(
-                "Branch",
-                sorted(df["branch"].unique()),
-                key="branch",
-                label_visibility="collapsed",
-            )
+            branch = st.selectbox("Branch", sorted(df["branch"].unique()), key="branch")
         with c2:
-            per_page = st.selectbox(
-                "Per page",
-                [5, 10, 20, 50],
-                index=1,
-                key="r_size",
-                label_visibility="collapsed",
-            )
+            per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="r_size")
         with c3:
-            page_num = st.number_input(
-                "Page", min_value=1, value=1, key="r_page", label_visibility="collapsed"
-            )
+            page_num = st.number_input("Page", min_value=1, value=1, key="r_page")
 
         branch_df = df[df["branch"] == branch].sort_values("gpa_rank")
+        page_data, total_pages = paginate(branch_df, per_page, page_num)
+        of_text = f"of {total_pages}" if total_pages > 1 else ""
         with c4:
-            st.markdown(f"**{len(branch_df)}** student(s)")
-        page_data, _ = paginate(branch_df, per_page, page_num)
+            st.html(f"<div style='padding-top:24px;text-align:center'>{of_text}</div>")
+        with c5:
+            st.html(
+                f"<div style='padding-top:24px'><strong>{len(branch_df)}</strong> student(s)</div>"
+            )
         for _, row in page_data.iterrows():
             render_student_card(row, subjects_for_branch(row["branch"]))
 
