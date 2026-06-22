@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 
 CSV_PATH = "stem_results.csv"
 
@@ -193,7 +194,7 @@ def main():
     df = load_data()
     df = compute_subject_ranks(df)
 
-    tab1, tab2 = st.tabs(["Search", "Rankings"])
+    tab1, tab2, tab3 = st.tabs(["Search", "Rankings", "Stats"])
 
     with tab1:
         c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="center")
@@ -249,6 +250,71 @@ def main():
             )
         for _, row in page_data.iterrows():
             render_student_card(row, subjects_for_branch(row["branch"]))
+
+    with tab3:
+        branch_filter = st.selectbox(
+            "Branch", ["All"] + sorted(df["branch"].unique()), key="stats_branch"
+        )
+        subj_df = df if branch_filter == "All" else df[df["branch"] == branch_filter]
+        subjects = (
+            SCIENCE_SUBJECTS + MATH_SUBJECTS
+            if branch_filter == "All"
+            else subjects_for_branch(branch_filter)
+        )
+
+        grade_order = [
+            "A",
+            "A-",
+            "B+",
+            "B",
+            "B-",
+            "C+",
+            "C",
+            "C-",
+            "D+",
+            "D",
+            "D-",
+            "F",
+        ]
+        seen = set()
+        for name, grade_col, _ in subjects:
+            if name in seen:
+                continue
+            seen.add(name)
+            col = "second_language_grade" if name == "second_language" else grade_col
+            counts = subj_df[col].value_counts()
+            dist = pd.DataFrame({"grade": grade_order}).set_index("grade")
+            dist["count"] = dist.index.map(lambda g: int(counts.get(g, 0)))
+            dist = dist[dist["count"] > 0]
+
+            if not dist.empty:
+                st.markdown(f"**{get_subject_label(name)}**")
+                chart = (
+                    alt.Chart(dist.reset_index())
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("grade:N", sort=None),
+                        y=alt.Y("count:Q"),
+                    )
+                    .properties(height=200)
+                )
+                st.altair_chart(chart, width="stretch")
+
+        gpa_bins = subj_df["gpa"].dropna()
+        if not gpa_bins.empty:
+            gpa_dist = gpa_bins.round(1).value_counts().sort_index().reset_index()
+            gpa_dist.columns = ["GPA", "count"]
+            st.markdown("**GPA Distribution**")
+            chart = (
+                alt.Chart(gpa_dist)
+                .mark_bar()
+                .encode(
+                    x=alt.X("GPA:Q", scale=alt.Scale(domain=[0, 4])),
+                    y=alt.Y("count:Q"),
+                )
+                .properties(height=200)
+            )
+            st.altair_chart(chart, width="stretch")
 
 
 if __name__ == "__main__":
