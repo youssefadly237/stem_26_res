@@ -96,6 +96,15 @@ def subjects_for_branch(branch):
     return SCIENCE_SUBJECTS if branch == "Science" else MATH_SUBJECTS
 
 
+def paginate(items, page_size, page):
+    total = len(items)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    page_data = items.iloc[start : start + page_size]
+    return page_data, total_pages
+
+
 def render_student_card(row, subjects):
     total = int(row["total_count"])
     gpa_ties = int(row["gpa_rank_ties"])
@@ -187,7 +196,24 @@ def main():
     tab1, tab2 = st.tabs(["Search", "Rankings"])
 
     with tab1:
-        query = st.text_input("Search by name (Arabic/English) or seat number").strip()
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1], vertical_alignment="bottom")
+        with c1:
+            query = st.text_input(
+                "Search by name (Arabic/English) or seat number",
+                label_visibility="collapsed",
+            ).strip()
+        with c2:
+            per_page = st.selectbox(
+                "Per page",
+                [5, 10, 20, 50],
+                index=1,
+                key="s_size",
+                label_visibility="collapsed",
+            )
+        with c3:
+            page_num = st.number_input(
+                "Page", min_value=1, value=1, key="s_page", label_visibility="collapsed"
+            )
 
         if query:
             mask = (
@@ -196,23 +222,46 @@ def main():
                 | df["seat_number"].eq(query)
             )
             results = df[mask]
+            with c4:
+                st.markdown(f"**{len(results)}** result(s)")
             if results.empty:
                 st.info("No results found.")
             else:
-                st.write(f"Found **{len(results)}** result(s):")
-                for _, row in results.iterrows():
-                    subjects = subjects_for_branch(row["branch"])
-                    render_student_card(row, subjects)
+                page_data, _ = paginate(results, per_page, page_num)
+                for _, row in page_data.iterrows():
+                    render_student_card(row, subjects_for_branch(row["branch"]))
         else:
-            st.info("Enter a name or seat number to search.")
+            with c4:
+                st.markdown("")
 
     with tab2:
-        branch = st.selectbox("Select branch", sorted(df["branch"].unique()))
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1], vertical_alignment="bottom")
+        with c1:
+            branch = st.selectbox(
+                "Branch",
+                sorted(df["branch"].unique()),
+                key="branch",
+                label_visibility="collapsed",
+            )
+        with c2:
+            per_page = st.selectbox(
+                "Per page",
+                [5, 10, 20, 50],
+                index=1,
+                key="r_size",
+                label_visibility="collapsed",
+            )
+        with c3:
+            page_num = st.number_input(
+                "Page", min_value=1, value=1, key="r_page", label_visibility="collapsed"
+            )
+
         branch_df = df[df["branch"] == branch].sort_values("gpa_rank")
-        st.write(f"Showing **{len(branch_df)}** students in **{branch}** branch")
-        for _, row in branch_df.iterrows():
-            subjects = subjects_for_branch(row["branch"])
-            render_student_card(row, subjects)
+        with c4:
+            st.markdown(f"**{len(branch_df)}** student(s)")
+        page_data, _ = paginate(branch_df, per_page, page_num)
+        for _, row in page_data.iterrows():
+            render_student_card(row, subjects_for_branch(row["branch"]))
 
 
 if __name__ == "__main__":
