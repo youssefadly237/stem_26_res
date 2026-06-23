@@ -4,10 +4,24 @@ import altair as alt
 
 CSV_PATH = "stem_results.csv"
 
+GRADE_ORDER = ["A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]
+
+SUBJECT_LABELS = {
+    "arabic": "Arabic",
+    "first_language": "English",
+    "second_language": "2nd Language",
+    "chemistry": "Chemistry",
+    "physics": "Physics",
+    "biology": "Biology",
+    "geology": "Geology",
+    "pure_math": "Pure Math",
+    "applied_math": "Applied Math",
+}
+
 SCIENCE_SUBJECTS = [
     ("arabic", "arabic_grade", "arabic_points"),
     ("first_language", "first_language_grade", "first_language_points"),
-    ("second_language", None, None),
+    ("second_language", "second_language_grade", "second_language_points"),
     ("chemistry", "chemistry_grade", "chemistry_points"),
     ("physics", "physics_grade", "physics_points"),
     ("biology", "biology_grade", "biology_points"),
@@ -17,12 +31,14 @@ SCIENCE_SUBJECTS = [
 MATH_SUBJECTS = [
     ("arabic", "arabic_grade", "arabic_points"),
     ("first_language", "first_language_grade", "first_language_points"),
-    ("second_language", None, None),
+    ("second_language", "second_language_grade", "second_language_points"),
     ("chemistry", "chemistry_grade", "chemistry_points"),
     ("physics", "physics_grade", "physics_points"),
     ("pure_math", "pure_math_grade", "pure_math_points"),
     ("applied_math", "applied_math_grade", "applied_math_points"),
 ]
+
+PAGE_SIZE_OPTIONS = [5, 10, 20, 50]
 
 
 @st.cache_data
@@ -73,24 +89,11 @@ def compute_subject_ranks(df):
         df.groupby("branch")["gpa"].rank(ascending=False, method="min").astype("Int64")
     )
     df["gpa_rank_ties"] = (
-        df.groupby(["branch", "gpa_rank"])["gpa"].transform("size").astype("Int64")
+        df.groupby(["branch", "gpa_rank"])["seat_number"]
+        .transform("size")
+        .astype("Int64")
     )
     return df
-
-
-def get_subject_label(name):
-    labels = {
-        "arabic": "Arabic",
-        "first_language": "English",
-        "second_language": "2nd Language",
-        "chemistry": "Chemistry",
-        "physics": "Physics",
-        "biology": "Biology",
-        "geology": "Geology",
-        "pure_math": "Pure Math",
-        "applied_math": "Applied Math",
-    }
-    return labels.get(name, name)
 
 
 def subjects_for_branch(branch):
@@ -106,6 +109,38 @@ def paginate(items, page_size, page):
     return page_data, total_pages
 
 
+def render_bar_chart(data, x, y, height=200, **x_kwargs):
+    chart = (
+        alt.Chart(data)
+        .mark_bar()
+        .encode(x=alt.X(x, **x_kwargs), y=alt.Y(y))
+        .properties(height=height)
+    )
+    st.altair_chart(chart, width="stretch")
+
+
+def render_paginated_ui(
+    col_page, col_of, col_count, data, per_page, page_key, count_label
+):
+    _, total_pages = paginate(data, per_page, 1)
+    with col_page:
+        if st.session_state.get(page_key, 1) > total_pages:
+            st.session_state[page_key] = total_pages
+        page_num = st.number_input(
+            "Page", min_value=1, max_value=total_pages, value=1, key=page_key
+        )
+
+    page_data, total_pages = paginate(data, per_page, page_num)
+    of_text = f"of {total_pages}" if total_pages > 1 else ""
+    with col_of:
+        st.html(f"<div class='pagination-text'>{of_text}</div>")
+    with col_count:
+        st.html(
+            f"<div class='pagination-text'><strong>{len(data)}</strong> {count_label}</div>"
+        )
+    return page_data
+
+
 def render_student_card(row, subjects):
     total = int(row["total_count"])
     gpa_ties = int(row["gpa_rank_ties"])
@@ -117,17 +152,11 @@ def render_student_card(row, subjects):
 
     rows = []
     for name, grade_col, points_col in subjects:
-        label = get_subject_label(name)
-        if name == "second_language":
-            grade = row.get("second_language_grade", "")
-            points = row.get("second_language_points", "")
-            rank_col = "second_language_points_rank"
-            tie_col = "second_language_points_rank_ties"
-        else:
-            grade = row.get(grade_col, "")
-            points = row.get(points_col, "")
-            rank_col = f"{points_col}_rank"
-            tie_col = f"{points_col}_rank_ties"
+        label = SUBJECT_LABELS.get(name, name)
+        grade = row.get(grade_col, "")
+        points = row.get(points_col, "")
+        rank_col = f"{points_col}_rank"
+        tie_col = f"{points_col}_rank_ties"
 
         rank_val = row.get(rank_col)
         tie_val = row.get(tie_col)
@@ -189,6 +218,11 @@ def render_student_card(row, subjects):
 
 def main():
     st.set_page_config(page_title="STEM 26 Results", layout="wide")
+    st.html(
+        """<style>
+.pagination-text { padding-top: 24px; text-align: center; }
+</style>"""
+    )
     st.title("STEM 26 Results")
 
     df = load_data()
@@ -200,10 +234,12 @@ def main():
         c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1], vertical_alignment="center")
         with c1:
             query = st.text_input(
-                "Search by name (Arabic/English) or seat number"
+                "Search by name (Arabic/English) or seat number", key="s_query"
             ).strip()
         with c2:
-            per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="s_size")
+            per_page = st.selectbox(
+                "Per page", PAGE_SIZE_OPTIONS, index=1, key="s_size"
+            )
 
         if query:
             mask = (
@@ -212,23 +248,9 @@ def main():
                 | df["seat_number"].eq(query)
             )
             results = df[mask]
-            _, total_pages = paginate(results, per_page, 1)
-            with c3:
-                if st.session_state.get("s_page", 1) > total_pages:
-                    st.session_state["s_page"] = total_pages
-                page_num = st.number_input(
-                    "Page", min_value=1, max_value=total_pages, value=1, key="s_page"
-                )
-            page_data, total_pages = paginate(results, per_page, page_num)
-            of_text = f"of {total_pages}" if total_pages > 1 else ""
-            with c4:
-                st.html(
-                    f"<div style='padding-top:24px;text-align:center'>{of_text}</div>"
-                )
-            with c5:
-                st.html(
-                    f"<div style='padding-top:24px'><strong>{len(results)}</strong> result(s)</div>"
-                )
+            page_data = render_paginated_ui(
+                c3, c4, c5, results, per_page, "s_page", "result(s)"
+            )
             if results.empty:
                 st.info("No results found.")
             else:
@@ -240,24 +262,14 @@ def main():
         with c1:
             branch = st.selectbox("Branch", sorted(df["branch"].unique()), key="branch")
         with c2:
-            per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="r_size")
+            per_page = st.selectbox(
+                "Per page", PAGE_SIZE_OPTIONS, index=1, key="r_size"
+            )
 
         branch_df = df[df["branch"] == branch].sort_values("gpa_rank")
-        _, total_pages = paginate(branch_df, per_page, 1)
-        with c3:
-            if st.session_state.get("r_page", 1) > total_pages:
-                st.session_state["r_page"] = total_pages
-            page_num = st.number_input(
-                "Page", min_value=1, max_value=total_pages, value=1, key="r_page"
-            )
-        page_data, total_pages = paginate(branch_df, per_page, page_num)
-        of_text = f"of {total_pages}" if total_pages > 1 else ""
-        with c4:
-            st.html(f"<div style='padding-top:24px;text-align:center'>{of_text}</div>")
-        with c5:
-            st.html(
-                f"<div style='padding-top:24px'><strong>{len(branch_df)}</strong> student(s)</div>"
-            )
+        page_data = render_paginated_ui(
+            c3, c4, c5, branch_df, per_page, "r_page", "student(s)"
+        )
         for _, row in page_data.iterrows():
             render_student_card(row, subjects_for_branch(row["branch"]))
 
@@ -272,20 +284,6 @@ def main():
             else subjects_for_branch(branch_filter)
         )
 
-        grade_order = [
-            "A",
-            "A-",
-            "B+",
-            "B",
-            "B-",
-            "C+",
-            "C",
-            "C-",
-            "D+",
-            "D",
-            "D-",
-            "F",
-        ]
         seen = set()
         for name, grade_col, _ in subjects:
             if name in seen:
@@ -293,36 +291,30 @@ def main():
             seen.add(name)
             col = "second_language_grade" if name == "second_language" else grade_col
             counts = subj_df[col].value_counts()
-            dist = pd.DataFrame({"grade": grade_order}).set_index("grade")
+            dist = pd.DataFrame({"grade": GRADE_ORDER}).set_index("grade")
             dist["count"] = dist.index.map(lambda g: int(counts.get(g, 0)))
 
-            st.markdown(f"**{get_subject_label(name)}**")
-            chart = (
-                alt.Chart(dist.reset_index())
-                .mark_bar()
-                .encode(
-                    x=alt.X("grade:N", sort=None),
-                    y=alt.Y("count:Q"),
-                )
-                .properties(height=200)
+            st.markdown(f"**{SUBJECT_LABELS.get(name, name)}**")
+            render_bar_chart(
+                dist.reset_index(),
+                "grade",
+                "count",
+                type="nominal",
+                sort=None,
             )
-            st.altair_chart(chart, width="stretch")
 
         gpa_bins = subj_df["gpa"].dropna()
         if not gpa_bins.empty:
             gpa_dist = gpa_bins.round(1).value_counts().sort_index().reset_index()
             gpa_dist.columns = ["GPA", "count"]
             st.markdown("**GPA Distribution**")
-            chart = (
-                alt.Chart(gpa_dist)
-                .mark_bar()
-                .encode(
-                    x=alt.X("GPA:Q", scale=alt.Scale(domain=[0, 4])),
-                    y=alt.Y("count:Q"),
-                )
-                .properties(height=200)
+            render_bar_chart(
+                gpa_dist,
+                "GPA",
+                "count",
+                type="quantitative",
+                scale=alt.Scale(domain=[0, 4]),
             )
-            st.altair_chart(chart, width="stretch")
 
 
 if __name__ == "__main__":
