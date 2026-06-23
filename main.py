@@ -204,8 +204,6 @@ def main():
             ).strip()
         with c2:
             per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="s_size")
-        with c3:
-            page_num = st.number_input("Page", min_value=1, value=1, key="s_page")
 
         if query:
             mask = (
@@ -214,6 +212,13 @@ def main():
                 | df["seat_number"].eq(query)
             )
             results = df[mask]
+            _, total_pages = paginate(results, per_page, 1)
+            with c3:
+                if st.session_state.get("s_page", 1) > total_pages:
+                    st.session_state["s_page"] = total_pages
+                page_num = st.number_input(
+                    "Page", min_value=1, max_value=total_pages, value=1, key="s_page"
+                )
             page_data, total_pages = paginate(results, per_page, page_num)
             of_text = f"of {total_pages}" if total_pages > 1 else ""
             with c4:
@@ -236,10 +241,15 @@ def main():
             branch = st.selectbox("Branch", sorted(df["branch"].unique()), key="branch")
         with c2:
             per_page = st.selectbox("Per page", [5, 10, 20, 50], index=1, key="r_size")
-        with c3:
-            page_num = st.number_input("Page", min_value=1, value=1, key="r_page")
 
         branch_df = df[df["branch"] == branch].sort_values("gpa_rank")
+        _, total_pages = paginate(branch_df, per_page, 1)
+        with c3:
+            if st.session_state.get("r_page", 1) > total_pages:
+                st.session_state["r_page"] = total_pages
+            page_num = st.number_input(
+                "Page", min_value=1, max_value=total_pages, value=1, key="r_page"
+            )
         page_data, total_pages = paginate(branch_df, per_page, page_num)
         of_text = f"of {total_pages}" if total_pages > 1 else ""
         with c4:
@@ -285,20 +295,18 @@ def main():
             counts = subj_df[col].value_counts()
             dist = pd.DataFrame({"grade": grade_order}).set_index("grade")
             dist["count"] = dist.index.map(lambda g: int(counts.get(g, 0)))
-            dist = dist[dist["count"] > 0]
 
-            if not dist.empty:
-                st.markdown(f"**{get_subject_label(name)}**")
-                chart = (
-                    alt.Chart(dist.reset_index())
-                    .mark_bar()
-                    .encode(
-                        x=alt.X("grade:N", sort=None),
-                        y=alt.Y("count:Q"),
-                    )
-                    .properties(height=200)
+            st.markdown(f"**{get_subject_label(name)}**")
+            chart = (
+                alt.Chart(dist.reset_index())
+                .mark_bar()
+                .encode(
+                    x=alt.X("grade:N", sort=None),
+                    y=alt.Y("count:Q"),
                 )
-                st.altair_chart(chart, width="stretch")
+                .properties(height=200)
+            )
+            st.altair_chart(chart, width="stretch")
 
         gpa_bins = subj_df["gpa"].dropna()
         if not gpa_bins.empty:
